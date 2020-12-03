@@ -1,0 +1,300 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class BoardConrtoller : MonoBehaviour
+{
+    //Этот скрипт нужно будет сделать наследуемым от класса Board
+
+    public static BoardConrtoller instance;
+
+    private int xSize, ySize;
+    private List<Sprite> tileSprite = new List<Sprite>();
+    private Tile[,] tileArray;
+
+
+    private Vector2[] dirRay = new Vector2[] { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
+
+    private bool isFindMatch = false;
+
+    private bool isShift = false;
+
+    private bool isSearchEmptyTile = false;
+
+    private Tile oldSelectedTile;
+
+    public void SetValue(Tile[,] tileArray, int xSize, int ySize, List<Sprite> tileSprite)
+    {
+        this.xSize = xSize;
+        this.ySize = ySize;
+        this.tileSprite = tileSprite;
+        this.tileArray = tileArray;
+    }
+
+    private void Awake()
+    {
+        instance = this;
+    }
+
+    void Update()
+    {
+        if (isSearchEmptyTile)
+        {
+            SearchEmptyTiles();
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            RaycastHit2D ray = Physics2D.GetRayIntersection(Camera.main.ScreenPointToRay(Input.mousePosition));
+
+            if(ray != false)
+            {
+                CheckSelectionTile(ray.collider.gameObject.GetComponent<Tile>());
+            }
+        }
+    }
+
+    #region(Выделить тайл, снять вы деление с тайла, управление выделением )
+
+    private void TileSelected(Tile tile)
+    {
+        tile.isSelected = true;
+        tile.SpriteRenderer.color = new Color(0.5f, 0.5f, 0.5f); 
+        oldSelectedTile = tile;
+    }
+
+    private void DesselectedTile(Tile tile)
+    {
+        tile.isSelected = false;
+        tile.SpriteRenderer.color = new Color(1, 1, 1);
+        oldSelectedTile = null;
+    }
+
+    private void CheckSelectionTile(Tile tile)
+    {
+        if (tile.isEmpty || isShift)
+        {
+            return;
+        }
+        if (tile.isSelected)
+        {
+            DesselectedTile(tile);
+        }
+        //Первое выделение тайла
+        else
+        {
+            if (!tile.isSelected && oldSelectedTile == null)
+            {
+                TileSelected(tile);
+            }
+            //Попытка выбора другого тайла
+            else {
+                //Если 2-ой выбранный тайл - сосед второго предыдущего тайла
+                if(AdjacentTiles().Contains(tile))
+                {
+                    SwapTwoTile(tile);
+                    FindAllMatches(tile);
+                    DesselectedTile(oldSelectedTile);
+                }
+                //Новое выделение, забывя старый  тайл
+                else
+                {
+                    DesselectedTile(oldSelectedTile);
+                    TileSelected(tile);
+                }
+            }
+        }
+        
+    }
+
+    #endregion
+
+    #region(Поиск совпадения, удаление спрайтов, поиск всех совпадений)
+
+
+    private List<Tile> FindMatch(Tile tile, Vector2 dir)
+    {
+        List<Tile> cashFindTiles = new List<Tile>();
+        RaycastHit2D hit = Physics2D.Raycast( tile.transform.position, dir);
+        while(hit.collider != null && hit.collider.gameObject.GetComponent<Tile>().SpriteRenderer.sprite == tile.SpriteRenderer.sprite)
+        {
+            Debug.Log("Новый спрайТ!");
+            cashFindTiles.Add(hit.collider.gameObject.GetComponent<Tile>());
+            hit = Physics2D.Raycast(hit.collider.gameObject.transform.position, dir);
+        }
+        return cashFindTiles;
+    }
+
+    private void DeleteSprites(Tile tile, Vector2[] dirArray)
+    {
+        List<Tile> cashFindSprites = new List<Tile>();
+        
+        for(int i = 0; i < dirArray.Length; i++)
+        {
+            cashFindSprites.AddRange(FindMatch(tile, dirArray[i]));
+        }
+
+        if(cashFindSprites.Count >= 2)
+        {
+             for(int i = 0; i < cashFindSprites.Count; i++)
+            {
+                cashFindSprites[i].SpriteRenderer.sprite = null;
+            }
+            isFindMatch = true;
+        }
+    }
+
+    private void FindAllMatches(Tile tile)
+    {
+        if (tile.isEmpty)
+        {
+            return;
+        }
+        else
+        {
+
+            DeleteSprites(tile, new Vector2[2] { Vector2.up, Vector2.down });
+            DeleteSprites(tile, new Vector2[2] { Vector2.left, Vector2.right });
+
+            if (isFindMatch)
+            {
+                isFindMatch = false;
+                tile.SpriteRenderer.sprite = null;
+                isSearchEmptyTile = true;
+            }
+        }
+        
+    }
+    #endregion
+
+    #region(Смена 2ух тайлов, поиск соседних тайлов)
+
+    private void SwapTwoTile(Tile tile)
+    {
+        if(oldSelectedTile.SpriteRenderer.sprite == tile.SpriteRenderer.sprite)
+        {
+            return;
+        }
+        else
+        {
+
+                Sprite cashSprite = oldSelectedTile.SpriteRenderer.sprite;
+                oldSelectedTile.SpriteRenderer.sprite = tile.SpriteRenderer.sprite;
+                tile.SpriteRenderer.sprite = cashSprite;
+
+                UI.instance.Moves(1);
+            
+        }
+    } 
+
+    private List<Tile> AdjacentTiles()
+    {
+        List<Tile> cashTiles = new List<Tile>();
+        for(int i = 0; i < dirRay.Length; i++)
+        {
+            RaycastHit2D hit = Physics2D.Raycast(oldSelectedTile.transform.position, dirRay[i]);
+            if(hit.collider != null)
+            {
+                cashTiles.Add(hit.collider.gameObject.GetComponent<Tile>());
+            }
+        }
+        return cashTiles;
+    }
+    #endregion
+
+    #region(Поиск пустого тайла, сдвиг тайла вниз, установка нового спрайта, получение нового спрайта)
+
+    private void SearchEmptyTiles()
+    {
+        for(int x = 0; x < xSize; x++)
+        {
+            for(int y = 0; y < ySize; y++)
+            {
+                if(tileArray[x, y].isEmpty)
+                {
+                    ShiftTileDown(x, y);
+                    break;
+                }
+                if(x == xSize && y == ySize - 1)
+                {
+                    isSearchEmptyTile = false;
+                }
+            }
+        }
+
+        for(int x = 0; x < xSize; x++)
+        {
+            for(int y = 0; y < ySize; y++)
+            {
+                FindAllMatches(tileArray[x, y]);
+            }
+        }
+    }
+
+    private void ShiftTileDown(int xPos, int yPos)
+    {
+        isShift = true;
+
+        int count = 0;
+
+        List<SpriteRenderer> cashRenderer = new List<SpriteRenderer>();
+
+        for(int y = yPos; y < ySize; y++)
+        {
+            Tile tile = tileArray[xPos, y];
+            if (tile.isEmpty)
+            {
+                count++;
+            }
+            cashRenderer.Add(tile.SpriteRenderer);
+        }
+
+        for(int i = 0; i < count; i++)
+        {
+            UI.instance.Score(50);
+            SetNewSprite(xPos, cashRenderer);
+        }
+
+        
+
+        isShift = false;
+    }
+
+    private void SetNewSprite(int xPos, List<SpriteRenderer> renderer)
+    {
+        for (int y = 0; y < renderer.Count - 1; y++)
+        {
+            renderer[y].sprite = renderer[y + 1].sprite;
+            renderer[y + 1].sprite = GetNewSprite(xPos, ySize - 1);
+        }
+    }
+
+    private Sprite GetNewSprite(int xPos, int yPos)
+    {
+        List<Sprite> cashSprite = new List<Sprite>();
+        cashSprite.AddRange(tileSprite);
+
+        if(xPos > 0)
+        {
+            cashSprite.Remove(tileArray[xPos - 1, yPos].SpriteRenderer.sprite);
+        }
+
+        if(xPos < xSize - 1)
+        {
+            cashSprite.Remove(tileArray[xPos + 1, yPos].SpriteRenderer.sprite);
+        }
+
+        if(yPos > 0)
+        {
+            cashSprite.Remove(tileArray[xPos, yPos - 1].SpriteRenderer.sprite);
+        }
+
+        /*if(yPos < ySize - 1)
+        {
+            cashSprite.Remove(tileArray[xPos, yPos + 1].SpriteRenderer.sprite);
+        }
+        */
+        return cashSprite[Random.Range(0, cashSprite.Count)];
+    }
+    #endregion
+}
