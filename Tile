@@ -1,0 +1,14 @@
+using UnityEngine;
+
+public class Tile : MonoBehaviour
+{
+    public SpriteRenderer SpriteRenderer;
+    public bool isSelected;
+    public bool isEmpty
+    {
+        get
+        {
+            return SpriteRenderer.sprite == null?true: false;
+        }
+    }
+}
